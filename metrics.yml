@@ -129,6 +129,24 @@ metrics:
     match: {Prio: 1}
     distribution: false
 
+  - key: notify_high_thread
+    name: Signal to high prio thread
+    benchmark: Signal to high prio thread
+    match: {}
+    distribution: true
+
+  - key: notify_high_thread_early
+    name: Signal to high prio thread (early processing)
+    benchmark: Signal to high prio thread (early processing)
+    match: {}
+    distribution: false
+
+  - key: notify_low_thread
+    name: Signal to low prio thread
+    benchmark: Signal to low prio thread
+    match: {}
+    distribution: true
+
   # --- Yield
   - key: thread_yield
     name: Thread yield
@@ -136,11 +154,48 @@ metrics:
     match: {}
     distribution: true
 
+  - key: thread_yield_early
+    name: Thread yield (early processing)
+    benchmark: Thread yield (early processing)
+    match: {}
+    distribution: false
+
   - key: process_yield
     name: Process yield
     benchmark: Process yield
     match: {}
     distribution: true
+
+  - key: process_yield_early
+    name: Process yield (early processing)
+    benchmark: Process yield (early processing)
+    match: {}
+    distribution: false
+
+  # --- Producer / consumer
+  - key: producer_to_consumer
+    name: Producer to consumer
+    benchmark: Producer to consumer
+    match: {}
+    distribution: true
+
+  - key: producer_to_consumer_early
+    name: Producer to consumer (early processing)
+    benchmark: Producer to consumer (early processing)
+    match: {}
+    distribution: false
+
+  - key: consumer_to_producer
+    name: Consumer to producer
+    benchmark: Consumer to producer
+    match: {}
+    distribution: true
+
+  - key: consumer_to_producer_early
+    name: Consumer to producer (early processing)
+    benchmark: Consumer to producer (early processing)
+    match: {}
+    distribution: false
 
   # --- Faults (does not exist in all configs)
   - key: fault_round_trip
@@ -149,11 +204,23 @@ metrics:
     match: {}
     distribution: true
 
+  - key: fault_round_trip_early
+    name: Fault round trip (early processing)
+    benchmark: fault round trip (early processing)
+    match: {}
+    distribution: false
+
   - key: fault_to_handler
     name: Faulter -> fault handler
     benchmark: faulter -> fault handler
     match: {}
     distribution: true
+
+  - key: fault_to_handler_early
+    name: Faulter -> fault handler (early processing)
+    benchmark: faulter -> fault handler (early processing)
+    match: {}
+    distribution: false
 
   - key: fault_from_handler
     name: Fault handler -> faulter
@@ -161,7 +228,13 @@ metrics:
     match: {}
     distribution: true
 
-  # --- Baseline / syscall overhead --------------------------------------------
+  - key: fault_from_handler_early
+    name: Fault handler -> faulter (early processing)
+    benchmark: fault handler -> faulter (early processing)
+    match: {}
+    distribution: false
+
+  # --- Baseline / syscall overhead
   - key: nop_syscall
     name: Nop syscall overhead
     benchmark: Nop syscall overhead
@@ -174,8 +247,96 @@ metrics:
     match: {}
     distribution: true
 
+  - key: null_syscall_early
+    name: Hardware null_syscall (early processing)
+    benchmark: Hardware null_syscall thread (early processing)
+    match: {}
+    distribution: false
+
   - key: signal_overhead
     name: Signal overhead
     benchmark: Signal overhead
     match: {}
     distribution: true
+
+  # --- Page mapping
+  # N=1 for overhead; N=2048 for less noise. Other results almost exactly linear.
+  - key: map_1
+    name: Map pages (1 page)
+    benchmark: Mapping Benchmark
+    match: {Phase: Mapping, "Num of Page Mapped": 1}
+    distribution: true
+
+  - key: map_2048
+    name: Map pages (2048 pages)
+    benchmark: Mapping Benchmark
+    match: {Phase: Mapping, "Num of Page Mapped": 2048}
+    distribution: true
+
+  - key: protect_1
+    name: Protect pages read-only (1 page)
+    benchmark: Mapping Benchmark
+    match: {Phase: Protect Pages as Read Only, "Num of Page Mapped": 1}
+    distribution: true
+
+  - key: protect_2048
+    name: Protect pages read-only (2048 pages)
+    benchmark: Mapping Benchmark
+    match: {Phase: Protect Pages as Read Only, "Num of Page Mapped": 2048}
+    distribution: true
+
+  - key: unprotect_1
+    name: Unprotect pages (1 page)
+    benchmark: Mapping Benchmark
+    match: {Phase: Unprotect Pages, "Num of Page Mapped": 1}
+    distribution: true
+
+  - key: unprotect_2048
+    name: Unprotect pages (2048 pages)
+    benchmark: Mapping Benchmark
+    match: {Phase: Unprotect Pages, "Num of Page Mapped": 2048}
+    distribution: true
+
+  # --- SMP
+  - key: smp_1core_c500
+    name: SMP throughput, 1 core, high contention (500 cycles)
+    benchmark: SMP Benchmark
+    match: {Cores: 1, Cycles: 500}
+    distribution: true
+
+  - key: smp_4core_c500
+    name: SMP throughput, 4 cores, high contention (500 cycles)
+    benchmark: SMP Benchmark
+    match: {Cores: 4, Cycles: 500}
+    distribution: true
+
+  - key: smp_1core_c32000
+    name: SMP throughput, 1 core, low contention (32000 cycles)
+    benchmark: SMP Benchmark
+    match: {Cores: 1, Cycles: 32000}
+    distribution: true
+
+  - key: smp_4core_c32000
+    name: SMP throughput, 4 cores, low contention (32000 cycles)
+    benchmark: SMP Benchmark
+    match: {Cores: 4, Cycles: 32000}
+    distribution: true
+
+# Not tracked:
+#   - Wait time
+#   - Broadcast time
+#   - PMU event counters (non-cycle metrics):
+#     - Average to reschedule current thread
+#     - Average signal to low prio thread
+#     - Average seL4_Yield (no thread switch)
+#     - no sure these are useful, we have not looked at them in years
+#   - overheads specific to sel4bench
+#     - IRQ Measurement overhead
+#     - fault overhead
+#     - Read ccnt overhead
+#
+# Thinned:
+#   - Signal: rest of the priorities untracked; no interesting data
+#   - SMP Benchmark: 2 & 3 cores and other cycle counts left out, look linear
+#   - Mapping Benchmark: other page counts are linear;
+#                        other phases (alloc/prep) not really page mapping
