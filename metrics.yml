@@ -1,0 +1,181 @@
+# Copyright 2026, Proofcraft Pty Ltd
+#
+# SPDX-License-Identifier: BSD-2-Clause
+
+# Condensed set of sel4bench benchmarks results over time.
+#
+# The fields that are tracked from a single sel4bench metic is are:
+#
+#   [min, q1, median, mean, q3, max, stddev, n]
+#
+# For early processing, only mean, stdev and n are tracked, the rest is 0.
+#
+# The fields in this file define where to find the corresponding results
+# in the sel4bench JSON output (name + field match where necessary), and
+# whether distribution data is availble (min, q1, median, q3, max).
+#
+# Fields:
+#   key          used as the dict key in the series files.
+#   name         label for tables/plots.
+#   benchmark    the "Benchmark" section name in the sel4bench JSON.
+#   match        fields to identify the row in that section if there is more
+#                than one.
+#   distribution false for early-processing benchmarks
+
+metrics:
+
+  # --- IPC
+  - key: ipc_call
+    name: IPC Call (cross-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_Call, "Same vspace?": false, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_reply
+    name: IPC ReplyRecv (cross-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_ReplyRecv, "Same vspace?": false, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_call_fpu
+    name: IPC Call w/ FPU (cross-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: "seL4_Call (FPU)", "Same vspace?": false, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_reply_fpu
+    name: IPC ReplyRecv w/ FPU (cross-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: "seL4_ReplyRecv (FPU)", "Same vspace?": false, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_call_intra
+    name: IPC Call (same-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_Call, "Same vspace?": true, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_reply_intra
+    name: IPC ReplyRecv (same-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_ReplyRecv, "Same vspace?": true, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_send
+    name: IPC Send (cross-AS, len 0)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_Send, "Same vspace?": false, "IPC length": 0}
+    distribution: true
+
+  - key: ipc_call_len10
+    name: IPC Call (cross-AS, len 10)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_Call, "Same vspace?": false, "IPC length": 10}
+    distribution: true
+
+  - key: ipc_reply_len10
+    name: IPC ReplyRecv (cross-AS, len 10)
+    benchmark: One way IPC microbenchmarks
+    match: {Function: seL4_ReplyRecv, "Same vspace?": false, "IPC length": 10}
+    distribution: true
+
+  # --- IRQ
+  - key: irq_noswitch
+    name: IRQ path, no context switch
+    benchmark: IRQ path cycle count (measured from user level)
+    match: {Type: Without context switch}
+    distribution: true
+
+  - key: irq_noswitch_early
+    name: IRQ path, no context switch (early processing)
+    benchmark: IRQ path cycle count (measured from user level)
+    match: {Type: Without context switch (early processing)}
+    distribution: false
+
+  - key: irq_switch
+    name: IRQ path, with context switch
+    benchmark: IRQ path cycle count (measured from user level)
+    match: {Type: With context switch}
+    distribution: true
+
+  - key: irq_switch_early
+    name: IRQ path, with context switch (early processing)
+    benchmark: IRQ path cycle count (measured from user level)
+    match: {Type: With context switch (early processing)}
+    distribution: false
+
+  # --- Signal (Prio 1)
+  - key: notify_process
+    name: Signal to process of higher prio
+    benchmark: Signal to process of higher prio
+    match: {Prio: 1}
+    distribution: false
+
+  - key: notify_thread
+    name: Signal to thread of higher prio
+    benchmark: Signal to thread of higher prio
+    match: {Prio: 1}
+    distribution: true
+
+  - key: notify_process_early
+    name: Signal to process of higher prio (early processing)
+    benchmark: Signal to process of higher prio (early processing)
+    match: {Prio: 1}
+    distribution: false
+
+  - key: notify_thread_early
+    name: Signal to thread of higher prio (early processing)
+    benchmark: Signal to thread of higher prio (early processing)
+    match: {Prio: 1}
+    distribution: false
+
+  # --- Yield
+  - key: thread_yield
+    name: Thread yield
+    benchmark: Thread yield
+    match: {}
+    distribution: true
+
+  - key: process_yield
+    name: Process yield
+    benchmark: Process yield
+    match: {}
+    distribution: true
+
+  # --- Faults (does not exist in all configs)
+  - key: fault_round_trip
+    name: Fault round trip
+    benchmark: fault round trip
+    match: {}
+    distribution: true
+
+  - key: fault_to_handler
+    name: Faulter -> fault handler
+    benchmark: faulter -> fault handler
+    match: {}
+    distribution: true
+
+  - key: fault_from_handler
+    name: Fault handler -> faulter
+    benchmark: fault handler -> faulter
+    match: {}
+    distribution: true
+
+  # --- Baseline / syscall overhead --------------------------------------------
+  - key: nop_syscall
+    name: Nop syscall overhead
+    benchmark: Nop syscall overhead
+    match: {}
+    distribution: true
+
+  - key: null_syscall
+    name: Hardware null_syscall
+    benchmark: Hardware null_syscall thread
+    match: {}
+    distribution: true
+
+  - key: signal_overhead
+    name: Signal overhead
+    benchmark: Signal overhead
+    match: {}
+    distribution: true
