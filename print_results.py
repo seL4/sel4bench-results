@@ -36,6 +36,12 @@ META = {
     "run_id": "run-id",
 }
 
+# base URL for linking a run_id
+RUN_URL = "https://github.com/seL4/sel4bench/actions/runs"
+
+# URL template for linking a manifest sha
+MANIFEST_URL = "https://github.com/seL4/sel4bench-manifest/blob/{}/default.xml"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -58,6 +64,13 @@ def read_entries(path: str) -> list[Entry]:
     if not entries:
         raise ValueError(f"{path}: no entries")
     return entries
+
+
+def fmt_time(ts: str) -> str:
+    """Render timestamps like 2026-06-23T00:04:35Z as 'YYYY-MM-DD HH:MM UTC'"""
+    if not isinstance(ts, str) or "T" not in ts or len(ts) != 20:
+        return ts
+    return ts.replace('T', ' ').replace('Z', " UTC")
 
 
 def fmt(value: int | float | str) -> str:
@@ -195,7 +208,7 @@ def show_file(
     entries = sorted(read_entries(path), key=lambda entry: entry.get("run_id", 0))
     entry = find_entry(entries, run_id)
 
-    meta = [f"File:     {path}"]
+    meta = [f"file:     {path}"]
     if entry is None:
         meta.append(f"(run ID {run_id} not found)")
         print("\n".join(f"- {m}" for m in meta))
@@ -212,7 +225,14 @@ def show_file(
 
     for key, name in META.items():
         if key in entry and entry[key] not in ("", None):
-            meta.append(f"{name + ':':10}{entry[key]}")
+            value = entry[key]
+            if key == "run_id":
+                value = f"[{value}]({RUN_URL}/{value})"
+            elif key == "sha":
+                value = f"[{value}]({MANIFEST_URL.format(value)})"
+            elif key == "ts":
+                value = fmt_time(value)
+            meta.append(f"{name + ':':10}{value}")
     if diff_ref != 0:
         if prev is None:
             if diff_ref < 0:
@@ -221,8 +241,15 @@ def show_file(
                 note = f"(run ID {diff_ref} not found)"
             meta.append(note)
         else:
-            meta.append(f"diff to:  time={prev.get('ts', '')}, "
-                        f"manifest={prev.get('sha', '')}, run-id {prev.get('run_id', '')}")
+            prev_run_id = prev.get('run_id', '')
+            prev_run = f"[{prev_run_id}]({RUN_URL}/{prev_run_id})" if prev_run_id else ""
+            prev_sha = prev.get('sha', '')
+            prev_manifest = f"[{prev_sha}]({MANIFEST_URL.format(prev_sha)})" if prev_sha else ""
+            # align under "diff to:"
+            indent = "\n" + " " * 12
+            meta.append(f"{'diff to:':10}time={fmt_time(prev.get('ts', ''))},"
+                        f"{indent}manifest={prev_manifest},"
+                        f"{indent}run-id {prev_run}")
 
     print(f"## {config_of_path(path)}")
     print()
