@@ -14,8 +14,8 @@ import yaml
 
 # type for a single run; no attempt to model the data content
 Entry = dict[str, Any]
-# type of the data read from metrics.yml (key: {"name": str, "distribution": bool})
-Metrics = dict[str, dict[str, Any]]
+# type of the data read from metrics.yml (key -> distribution bool)
+Dist = dict[str, bool]
 
 
 # data field order in the jsonl files
@@ -45,12 +45,12 @@ MANIFEST_URL = "https://github.com/seL4/sel4bench-manifest/blob/{}/default.xml"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def load_metrics_file(path: str) -> Metrics:
-    """Return {key: {'name': ..., 'distribution': ...}} from metrics.yml."""
+def load_metrics_file(path: str) -> Dist:
+    """Return {key: distribution} from metrics.yml."""
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return {
-        m["key"]: {"name": m["name"], "distribution": m.get("distribution", True)}
+        m["key"]: m.get("distribution", True)
         for m in data["metrics"]
     }
 
@@ -104,21 +104,19 @@ def fmt_pct(cur: int | float | None, prev: int | float | None) -> str:
 
 
 def build_rows(
-    entry: Entry, metrics: Metrics, prev: Optional[Entry], fields: list[str]
+    entry: Entry, metrics: Dist, prev: Optional[Entry], fields: list[str]
 ) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]]]:
     """Return (header, rows, deltas, pcts) of cell strings for the table."""
     header = ["Metric"] + fields
-    rows: list[list[str]] = []     # value strings and metric name in column 0
+    rows: list[list[str]] = []     # value strings and metric key in column 0
     deltas: list[list[str]] = []   # absolute delta strings ("" where none); col 0 unused
     pcts: list[list[str]] = []     # percentage delta strings ("" where none)
     for key, value in entry.items():
         if key in META or not isinstance(value, list):
             continue
-        meta = metrics.get(key)
-        name = meta["name"] if meta else key
-        dist = meta["distribution"] if meta else True
+        dist = metrics.get(key, True)
         prev_value = prev.get(key) if prev else None
-        cells, dcells, pcells = [name], [""], [""]
+        cells, dcells, pcells = [key], [""], [""]
         for field in fields:
             i = FIELDS.index(field)
             v = value[i]
@@ -138,7 +136,7 @@ def build_rows(
 
 def render_markdown(
     entry: Entry,
-    metrics: Metrics,
+    metrics: Dist,
     prev: Optional[Entry] = None,
     fields: list[str] = FIELDS,
     abs_delta: bool = False,
@@ -195,7 +193,7 @@ def config_of_path(path: str) -> str:
 
 def show_file(
     path: str,
-    metrics: Metrics,
+    metrics: Dist,
     fields: list[str],
     run_id: Optional[int],
     diff_ref: int,
