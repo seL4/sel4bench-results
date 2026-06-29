@@ -4,10 +4,11 @@
 
 # Condensed set of sel4bench benchmarks results over time.
 #
-# The fields that are tracked from a single sel4bench metic is are:
+# The fields that are tracked from a single sel4bench metric is are:
 #
 #   [min, q1, median, mean, q3, max, stddev, n]
 #
+# (Potentially multiple of these, for multiple iterations)
 # For early processing, only mean, stdev and n are tracked, the rest is 0.
 #
 # The fields in this file define where to find the corresponding results

@@ -14,7 +14,9 @@ from typing import Any, Optional
 
 import yaml
 
-# type for a single run; no attempt to model the data content
+# type of a single result array
+Result = list[float | int]
+# type for a single run; no attempt to model the data content (includes metadata fields)
 Entry = dict[str, Any]
 # type of the data read from metrics.yml (key -> distribution bool)
 Dist = dict[str, bool]
@@ -68,6 +70,11 @@ def read_entries(path: str) -> list[Entry]:
     return entries
 
 
+def first_iteration(iterations: list[Result]) -> Result:
+    """Result array for the first iteration"""
+    return iterations[0]
+
+
 def fmt_time(ts: str) -> str:
     """Render timestamps like 2026-06-23T00:04:35Z as 'YYYY-MM-DD HH:MM UTC'"""
     if not isinstance(ts, str) or "T" not in ts or len(ts) != 20:
@@ -113,21 +120,23 @@ def build_rows(
     rows: list[list[str]] = []     # value strings and metric key in column 0
     deltas: list[list[str]] = []   # absolute delta strings ("" where none); col 0 unused
     pcts: list[list[str]] = []     # percentage delta strings ("" where none)
-    for key, value in entry.items():
-        if key in META or not isinstance(value, list):
+    for key, iterations in entry.items():
+        if key in META or not isinstance(iterations, list):
             continue
+        results = first_iteration(iterations)
         dist = metrics.get(key, True)
-        prev_value = prev.get(key) if prev else None
+        prev_results = prev.get(key) if prev else None
+        prev_result = first_iteration(prev_results) if prev_results else None
         cells, dcells, pcells = [key], [""], [""]
         for field in fields:
             i = FIELDS.index(field)
-            v = value[i]
+            v = results[i]
             if not dist and field in DIST_FIELDS:
                 cells.append("-")
             else:
                 cells.append(fmt(v))
-            pv = prev_value[i] if isinstance(prev_value, list) \
-                 and i < len(prev_value) else None
+            pv = prev_result[i] if isinstance(prev_result, list) \
+                 and i < len(prev_result) else None
             dcells.append(fmt_delta(v, pv))
             pcells.append(fmt_pct(v, pv))
         rows.append(cells)

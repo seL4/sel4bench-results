@@ -28,8 +28,8 @@ one workflow run:
 ```json
 {"ts": "2026-06-12T05:57:25Z", "sha": "00c86fb8",
  "sha_kernel": "868454e1", "sha_bench": "776ba8a8", "run_id": 27397639006,
- "ipc_call": [363, 365, 368, 366, 368, 373, 2.0, 16],
- "ipc_reply": [346, 347, 348, 348, 349, 349, 1.5, 16],
+ "ipc_call": [[363, 365, 368, 366, 368, 373, 2.0, 16], [...], [...], ...],
+ "ipc_reply": [[346, 347, 348, 348, 349, 349, 1.5, 16]],
  "...": []}
 ```
 
@@ -38,10 +38,16 @@ one workflow run:
 - `sha_kernel`: seL4 repo SHA in that manifest (redundant; for plotting)
 - `sha_bench`: sel4bench repo SHA in that manifest (redundant; for plotting)
 - `run_id`: GitHub Actions run id; disambiguates re-runs of one SHA
-- remaining keys: a metric `key` from [metrics.yml](metrics.yml), with value
-  `[min, q1, median, mean, q3, max, stddev, n]` (0 for values that don't exist
-  for early processing).
+- remaining keys: a metric `key` from [metrics.yml](metrics.yml), with value a
+  list of iteration result arrays
+  `[[min, q1, median, mean, q3, max, stddev, n], ...]`,
+  one result array per iteration of the benchmark within the run (0 for
+  values that don't exist for early processing).
 
 Not all metrics exist in all runs. Some configs are missing some benchmarks, new
-ones can be added over time. Currently all metrics are cycle counts (lower =
-better).
+ones can be added over time. Not all runs or keys have to have the same number
+of iterations/result arrays, but if a key exists, there must be at least one
+result array.
+
+Currently all metrics apart from smp metric are cycle counts (lower = better).
+The smp metrics are throughput.
