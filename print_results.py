@@ -69,7 +69,7 @@ def read_entries(path: str) -> list[Entry]:
 
 
 def fmt_time(ts: str) -> str:
-    """Render timestamps like 2026-06-23T00:04:35Z as 'YYYY-MM-DD HH:MM UTC'"""
+    """Render timestamps like 2026-06-23T00:04:35Z as 'YYYY-MM-DD HH:MM:SS UTC'"""
     if not isinstance(ts, str) or "T" not in ts or len(ts) != 20:
         return ts
     return ts.replace('T', ' ').replace('Z', " UTC")
