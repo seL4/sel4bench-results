@@ -5,6 +5,8 @@
 
 """Pretty-print results for the .jsonl time series files in this repo"""
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
