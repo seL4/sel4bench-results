@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: BSD-2-Clause
 
-"""Pretty-print results for the .jsonl time series files in this repo"""
+"""Pretty-print results from the .jsonl time series files or in this repo or
+   raw sel4bench .json files."""
 
 from __future__ import annotations
 
@@ -12,18 +13,13 @@ import json
 import os
 from typing import Any, Optional
 
-import yaml
+import sel4bench_extract as extract
+from sel4bench_extract import FIELDS, Result
 
-# type of a single result array
-Result = list[float | int]
 # type for a single run; no attempt to model the data content (includes metadata fields)
 Entry = dict[str, Any]
 # type of the data read from metrics.yml (key -> distribution bool)
 Dist = dict[str, bool]
-
-
-# data field order in the jsonl files
-FIELDS = ["min", "q1", "median", "mean", "q3", "max", "stddev", "n"]
 
 # fields that only exist in entries with distribution data (not early-processing)
 DIST_FIELDS = ["min", "q1", "median", "q3", "max"]
@@ -49,14 +45,9 @@ MANIFEST_URL = "https://github.com/seL4/sel4bench-manifest/blob/{}/default.xml"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def load_metrics_file(path: str) -> Dist:
-    """Return {key: distribution} from metrics.yml."""
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return {
-        m["key"]: m.get("distribution", True)
-        for m in data["metrics"]
-    }
+def dist_of_metrics(metrics: list[extract.Metric]) -> Dist:
+    """Return {key: distribution} for rendering, from metric definitions."""
+    return {m["key"]: m.get("distribution", True) for m in metrics}
 
 
 def read_entries(path: str) -> list[Entry]:
@@ -68,6 +59,13 @@ def read_entries(path: str) -> list[Entry]:
     if not entries:
         raise ValueError(f"{path}: no entries")
     return entries
+
+
+def read_results_json(path: str, metrics: list[extract.Metric]) -> Entry:
+    """Extract results from a raw sel4bench JSON result file as time series entry."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return extract.extract_entry(data, metrics)
 
 
 def first_iteration(iterations: list[Result]) -> Result:
@@ -204,7 +202,7 @@ def config_of_path(path: str) -> str:
 
 def show_file(
     path: str,
-    metrics: Dist,
+    metrics: list[extract.Metric],
     fields: list[str],
     run_id: Optional[int],
     diff_ref: int,
@@ -212,9 +210,18 @@ def show_file(
 ) -> Optional[int]:
     """Print the table for one file at the given run_id (None = latest).
 
+    A .jsonl file is treated as a time series; any other file is read as a raw
+    sel4bench JSON result file.
+
     Return the run_id actually shown, to be re-used for other files.
     """
-    entries = sorted(read_entries(path), key=lambda entry: entry.get("run_id", 0))
+    dist = dist_of_metrics(metrics)
+    if path.endswith(".jsonl"):
+        entries = sorted(read_entries(path), key=lambda entry: entry.get("run_id", 0))
+    else:
+        entries = [read_results_json(path, metrics)]
+        run_id = None
+        diff_ref = 0
     entry = find_entry(entries, run_id)
 
     meta = [f"file:     {path}"]
@@ -264,7 +271,7 @@ def show_file(
     print()
     print("\n".join(f"- {m}" for m in meta))   # metadata as a bullet list
     print()
-    print(render_markdown(entry, metrics, prev, fields, abs_delta))
+    print(render_markdown(entry, dist, prev, fields, abs_delta))
     return entry.get("run_id")
 
 
@@ -272,7 +279,9 @@ def main() -> None:
     """Parse command-line arguments and print tables for each input file."""
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("jsonl", nargs="+", help="time-series .jsonl file(s)")
+    ap.add_argument("jsonl", nargs="+",
+                    help="time-series .jsonl file(s), or raw sel4bench .json "
+                         "result file(s)")
     ap.add_argument("--metrics-file", default=os.path.join(HERE, "metrics.yml"),
                     help="path to metrics.yml (default: alongside this script)")
     ap.add_argument("--diff", type=int, nargs="?", const=-1, default=0,
@@ -289,7 +298,7 @@ def main() -> None:
     args = ap.parse_args()
 
     fields = FIELDS if args.full else DEFAULT_FIELDS
-    metrics = load_metrics_file(args.metrics_file)
+    metrics = extract.load_metrics(args.metrics_file)
 
     # Latest entry of first file determines run_id (unless specified)
     run_id = args.run_id
