@@ -68,6 +68,15 @@ def read_results_json(path: str, metrics: list[extract.Metric]) -> Entry:
     return extract.extract_entry(data, metrics)
 
 
+def read_results(path: str, metrics: list[extract.Metric]) -> list[Entry]:
+    """Read a time series from a .jsonl or raw .json file.
+       Return a single-element list for raw .json."""
+    if path.endswith(".jsonl"):
+        return sorted(read_entries(path), key=lambda entry: entry.get("run_id", 0))
+    else:
+        return [read_results_json(path, metrics)]
+
+
 def first_iteration(iterations: list[Result]) -> Result:
     """Result array for the first iteration"""
     return iterations[0]
@@ -196,6 +205,29 @@ def find_entry(entries: list[Entry], run_id: Optional[int]) -> Optional[Entry]:
         return entries[-1]
     return next((e for e in entries if e.get("run_id") == run_id), None)
 
+
+def pick_prev(
+    entries: list[Entry],
+    base: Optional[list[Entry]],
+    run_id: Optional[int],
+    diff_ref: int,
+) -> Optional[Entry]:
+    """Return the entry to diff against. Diff against `base` if given, else
+       against `entries` itself. `run_id` selects the anchor: the entry with
+       that run_id, or the last entry if run_id is None or not present. `diff_ref`
+       is relative to the anchor when it is not an absolute run-id."""
+    series = base if base is not None else entries
+    anchor = find_entry(series, run_id) or series[-1]
+    if diff_ref == 0:
+        # For a base series, diff the input against the base anchor; within a
+        # single series anchor==input, so nothing to diff against.
+        return anchor if base is not None else None
+    if diff_ref < 0:
+        pidx = series.index(anchor) + diff_ref
+        return series[pidx] if pidx >= 0 else None
+    return find_entry(series, diff_ref)
+
+
 def config_of_path(path: str) -> str:
     """Return CONFIG in path/to/CONFIG.jsonl"""
     return os.path.splitext(os.path.basename(path))[0]
@@ -207,21 +239,23 @@ def show_file(
     run_id: Optional[int],
     diff_ref: int,
     abs_delta: bool,
+    base: Optional[list[Entry]] = None,
+    base_path: Optional[str] = None,
 ) -> Optional[int]:
     """Print the table for one file at the given run_id (None = latest).
 
     A .jsonl file is treated as a time series; any other file is read as a raw
-    sel4bench JSON result file.
+    sel4bench JSON result file.  If base exists, the table is diffed against
+    the base series.
 
     Return the run_id actually shown, to be re-used for other files.
     """
     dist = dist_of_metrics(metrics)
-    if path.endswith(".jsonl"):
-        entries = sorted(read_entries(path), key=lambda entry: entry.get("run_id", 0))
-    else:
-        entries = [read_results_json(path, metrics)]
+    entries = read_results(path, metrics)
+    if not path.endswith(".jsonl"):
         run_id = None
-        diff_ref = 0
+        if base is None:
+            diff_ref = 0
     entry = find_entry(entries, run_id)
 
     meta = [f"file:     {path}"]
@@ -230,14 +264,7 @@ def show_file(
         print("\n".join(f"- {m}" for m in meta))
         return run_id
 
-    if diff_ref == 0:
-        prev = None
-    elif diff_ref < 0:
-        # -n entries back
-        pidx = entries.index(entry) + diff_ref
-        prev = entries[pidx] if pidx >= 0 else None
-    else:
-        prev = find_entry(entries, diff_ref)
+    prev = pick_prev(entries, base, run_id, diff_ref)
 
     for key, name in META.items():
         if key in entry and entry[key] not in ("", None):
@@ -249,23 +276,31 @@ def show_file(
             elif key == "ts":
                 value = fmt_time(value)
             meta.append(f"{name + ':':10}{value}")
-    if diff_ref != 0:
-        if prev is None:
-            if diff_ref < 0:
-                note = f"(fewer than {-diff_ref} entries before this one)"
-            else:
-                note = f"(run ID {diff_ref} not found)"
-            meta.append(note)
+    if prev is not None:
+        # not all of these always exist (e.g. for raw .json)
+        prev_run_id = prev.get('run_id', '')
+        prev_run = f"[{prev_run_id}]({RUN_URL}/{prev_run_id})" if prev_run_id else ""
+        prev_sha = prev.get('sha', '')
+        prev_manifest = f"[{prev_sha}]({MANIFEST_URL.format(prev_sha)})" if prev_sha else ""
+        prev_ts = fmt_time(prev.get('ts', ''))
+        parts = []
+        if base_path:
+            parts.append(f"file={base_path}")
+        if prev_ts:
+            parts.append(f"time={prev_ts}")
+        if prev_manifest:
+            parts.append(f"manifest={prev_manifest}")
+        if prev_run:
+            parts.append(f"run-id {prev_run}")
+        # align under "diff to:"
+        indent = ",\n" + " " * 12
+        meta.append(f"{'diff to:':10}" + indent.join(parts))
+    elif diff_ref != 0:
+        if diff_ref < 0:
+            note = f"(fewer than {-diff_ref} entries before this one)"
         else:
-            prev_run_id = prev.get('run_id', '')
-            prev_run = f"[{prev_run_id}]({RUN_URL}/{prev_run_id})" if prev_run_id else ""
-            prev_sha = prev.get('sha', '')
-            prev_manifest = f"[{prev_sha}]({MANIFEST_URL.format(prev_sha)})" if prev_sha else ""
-            # align under "diff to:"
-            indent = "\n" + " " * 12
-            meta.append(f"{'diff to:':10}time={fmt_time(prev.get('ts', ''))},"
-                        f"{indent}manifest={prev_manifest},"
-                        f"{indent}run-id {prev_run}")
+            note = f"(run ID {diff_ref} not found)"
+        meta.append(note)
 
     print(f"## {config_of_path(path)}")
     print()
@@ -289,6 +324,9 @@ def main() -> None:
                     help="show diff to previous entry; with a negative "
                          "argument, diff to n-th last entry; with a positive "
                          "argument, diff to given run ID")
+    ap.add_argument("--base", metavar="FILE",
+                    help="diff against a base .jsonl time series or raw "
+                         "sel4bench .json file")
     ap.add_argument("--run-id", type=int,
                     help="show this run ID instead of the latest entry")
     ap.add_argument("--full", action="store_true",
@@ -300,12 +338,15 @@ def main() -> None:
     fields = FIELDS if args.full else DEFAULT_FIELDS
     metrics = extract.load_metrics(args.metrics_file)
 
+    base = read_results(args.base, metrics) if args.base else None
+
     # Latest entry of first file determines run_id (unless specified)
     run_id = args.run_id
     for i, path in enumerate(args.jsonl):
         if i:
             print()
-        shown_run_id = show_file(path, metrics, fields, run_id, args.diff, args.abs_delta)
+        shown_run_id = show_file(path, metrics, fields, run_id, args.diff,
+                                 args.abs_delta, base, args.base)
         if run_id is None:
             run_id = shown_run_id
 
