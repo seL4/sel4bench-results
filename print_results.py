@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from typing import Any, Optional
 
 import sel4bench_extract as extract
@@ -68,13 +69,25 @@ def read_results_json(path: str, metrics: list[extract.Metric]) -> Entry:
     return extract.extract_entry(data, metrics)
 
 
+def read_results_log(path: str, metrics: list[extract.Metric]) -> Entry:
+    """Extract results from a raw sel4bench log file as time series entry."""
+    with open(path, encoding="utf-8") as f:
+        match = re.search(r"JSON OUTPUT\n(.*?)END JSON OUTPUT", f.read(), re.DOTALL)
+    if match is None:
+        raise ValueError(f"{path}: no 'JSON OUTPUT ... END JSON OUTPUT' block found")
+    data = json.loads(match.group(1))
+    return extract.extract_entry(data, metrics)
+
+
 def read_results(path: str, metrics: list[extract.Metric]) -> list[Entry]:
-    """Read a time series from a .jsonl or raw .json file.
-       Return a single-element list for raw .json."""
+    """Read a time series from a .jsonl, raw .json, or raw sel4bench log file.
+       Return a single-element list for the raw .json and log cases."""
     if path.endswith(".jsonl"):
         return sorted(read_entries(path), key=lambda entry: entry.get("run_id", 0))
-    else:
+    elif path.endswith(".json"):
         return [read_results_json(path, metrics)]
+    else:
+        return [read_results_log(path, metrics)]
 
 
 def first_iteration(iterations: list[Result]) -> Result:
@@ -244,9 +257,9 @@ def show_file(
 ) -> Optional[int]:
     """Print the table for one file at the given run_id (None = latest).
 
-    A .jsonl file is treated as a time series; any other file is read as a raw
-    sel4bench JSON result file.  If base exists, the table is diffed against
-    the base series.
+    A .jsonl file is treated as a time series; a .json file is read as a raw
+    sel4bench JSON result file; any other file is read as a raw sel4bench log.
+    If base exists, the table is diffed against the base series.
 
     Return the run_id actually shown, to be re-used for other files.
     """
@@ -315,8 +328,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("jsonl", nargs="+",
-                    help="time-series .jsonl file(s), or raw sel4bench .json "
-                         "result file(s)")
+                    help="time-series .jsonl file(s), raw sel4bench .json "
+                         "result file(s), or raw sel4bench log file(s)")
     ap.add_argument("--metrics-file", default=os.path.join(HERE, "metrics.yml"),
                     help="path to metrics.yml (default: alongside this script)")
     ap.add_argument("--diff", type=int, nargs="?", const=-1, default=0,
@@ -325,8 +338,8 @@ def main() -> None:
                          "argument, diff to n-th last entry; with a positive "
                          "argument, diff to given run ID")
     ap.add_argument("--base", metavar="FILE",
-                    help="diff against a base .jsonl time series or raw "
-                         "sel4bench .json file")
+                    help="diff against a base .jsonl time series, raw "
+                         "sel4bench .json file, or raw sel4bench log file")
     ap.add_argument("--run-id", type=int,
                     help="show this run ID instead of the latest entry")
     ap.add_argument("--full", action="store_true",
