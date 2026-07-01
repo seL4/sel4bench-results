@@ -12,6 +12,8 @@ import argparse
 import json
 import os
 import re
+import statistics
+
 from typing import Any, Optional
 
 import sel4bench_extract as extract
@@ -90,9 +92,36 @@ def read_results(path: str, metrics: list[extract.Metric]) -> list[Entry]:
         return [read_results_log(path, metrics)]
 
 
-def first_iteration(iterations: list[Result]) -> Result:
-    """Result array for the first iteration"""
-    return iterations[0]
+def average_iterations(iterations: list[Result]) -> Result:
+    """Aggregate iterations into one result array: min of min, max of
+       max, average of every other field."""
+    agg: Result = []
+    for field, values in zip(FIELDS, zip(*iterations)):
+        if field == "min":
+            agg.append(min(values))
+        elif field == "max":
+            agg.append(max(values))
+        elif field == "stddev":
+            agg.append(round(sum(values) / len(values), 1))
+        else:  # q1, median, mean, q3
+            agg.append(round(sum(values) / len(values)))
+    return agg
+
+
+def iteration_counts(entry: Entry) -> list[int]:
+    """Number of iterations recorded for each metric in an entry."""
+    return [len(v) for k, v in entry.items()
+            if k not in META and isinstance(v, list)]
+
+
+def return_result(
+    iterations: list[Result], avg: bool, iteration: Optional[int]
+) -> Optional[Result]:
+    """Return a single iteration or the average of all iterations."""
+    if avg:
+        return average_iterations(iterations)
+    idx = iteration if iteration is not None else 0
+    return iterations[idx] if 0 <= idx < len(iterations) else None
 
 
 def fmt_time(ts: str) -> str:
@@ -133,25 +162,37 @@ def fmt_pct(cur: int | float | None, prev: int | float | None) -> str:
 
 
 def build_rows(
-    entry: Entry, metrics: Dist, prev: Optional[Entry], fields: list[str]
-) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]]]:
-    """Return (header, rows, deltas, pcts) of cell strings for the table."""
+    entry: Entry, metrics: Dist, prev: Optional[Entry], fields: list[str],
+    avg: bool, iteration: Optional[int],
+) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]],
+           list[int], list[str]]:
+    """Return (header, rows, deltas, pcts, counts, mean_stddev) of cell strings.
+
+    counts is the number of iterations per row,
+    mean_stddev is the stddev between the per-iteration means.
+    """
+    mean_idx = FIELDS.index("mean")
     header = ["Metric"] + fields
     rows: list[list[str]] = []     # value strings and metric key in column 0
     deltas: list[list[str]] = []   # absolute delta strings ("" where none); col 0 unused
     pcts: list[list[str]] = []     # percentage delta strings ("" where none)
+    counts: list[int] = []         # number of iterations per row
+    mean_stddev: list[str] = []    # stddev between per-iteration means, per row
     for key, iterations in entry.items():
         if key in META or not isinstance(iterations, list):
             continue
-        results = first_iteration(iterations)
+        counts.append(len(iterations))
+        means = [it[mean_idx] for it in iterations]
+        mean_stddev.append(fmt(round(statistics.stdev(means), 1)) if len(means) > 1 else "-")
+        results = return_result(iterations, avg, iteration)
         dist = metrics.get(key, True)
         prev_results = prev.get(key) if prev else None
-        prev_result = first_iteration(prev_results) if prev_results else None
+        prev_result = return_result(prev_results, avg, iteration) if prev_results else None
         cells, dcells, pcells = [key], [""], [""]
         for field in fields:
             i = FIELDS.index(field)
-            v = results[i]
-            if not dist and field in DIST_FIELDS:
+            v = results[i] if results is not None else None
+            if v is None or (not dist and field in DIST_FIELDS):
                 cells.append("-")
             else:
                 cells.append(fmt(v))
@@ -162,7 +203,7 @@ def build_rows(
         rows.append(cells)
         deltas.append(dcells)
         pcts.append(pcells)
-    return header, rows, deltas, pcts
+    return header, rows, deltas, pcts, counts, mean_stddev
 
 
 def render_markdown(
@@ -171,9 +212,12 @@ def render_markdown(
     prev: Optional[Entry] = None,
     fields: list[str] = FIELDS,
     abs_delta: bool = False,
+    avg: bool = False,
+    iteration: Optional[int] = None,
 ) -> str:
     """Render one entry as a Markdown table, optionally with delta columns."""
-    header, rows, deltas, pcts = build_rows(entry, metrics, prev, fields)
+    header, rows, deltas, pcts, counts, mean_stddev = \
+        build_rows(entry, metrics, prev, fields, avg, iteration)
 
     # optional percentage delta and absolute delta
     # no delta for n; no percentage delta for stddev
@@ -193,6 +237,18 @@ def render_markdown(
     cells = [expand(header, ["Δ"] * n, ["Δ%"] * n)]
     for row, drow, prow in zip(rows, deltas, pcts):
         cells.append(expand(row, drow, prow))
+
+    # iteration-count column for --avg over a varying number of iterations
+    if avg and len(set(counts)) > 1:
+        cells[0].append("i")
+        for row, c in zip(cells[1:], counts):
+            row.append(str(c))
+
+    # for --avg, a final column with the stddev between the per-iteration means
+    if avg:
+        cells[0].append("σ(μ)")
+        for row, sd in zip(cells[1:], mean_stddev):
+            row.append(sd)
 
     widths = [max(len(r[i]) for r in cells) for i in range(len(cells[0]))]
 
@@ -252,6 +308,8 @@ def show_file(
     run_id: Optional[int],
     diff_ref: int,
     abs_delta: bool,
+    avg: bool,
+    iteration: Optional[int],
     base: Optional[list[Entry]] = None,
     base_path: Optional[str] = None,
 ) -> Optional[int]:
@@ -271,7 +329,7 @@ def show_file(
             diff_ref = 0
     entry = find_entry(entries, run_id)
 
-    meta = [f"file:     {path}"]
+    meta = [f"{'file:':11}{path}"]
     if entry is None:
         meta.append(f"(run ID {run_id} not found)")
         print("\n".join(f"- {m}" for m in meta))
@@ -288,7 +346,13 @@ def show_file(
                 value = f"[{value}]({MANIFEST_URL.format(value)})"
             elif key == "ts":
                 value = fmt_time(value)
-            meta.append(f"{name + ':':10}{value}")
+            meta.append(f"{name + ':':11}{value}")
+    counts = iteration_counts(entry)
+    if max(counts, default=0) > 1:
+        uniq_counts = set(counts)
+        total = f" (n={uniq_counts.pop()})" if len(uniq_counts) == 1 else ""
+        which = "average" if avg else str(iteration if iteration is not None else 0)
+        meta.append(f"{'iteration:':11}{which}{total}")
     if prev is not None:
         # not all of these always exist (e.g. for raw .json)
         prev_run_id = prev.get('run_id', '')
@@ -307,7 +371,7 @@ def show_file(
             parts.append(f"run-id {prev_run}")
         # align under "diff to:"
         indent = ",\n" + " " * 12
-        meta.append(f"{'diff to:':10}" + indent.join(parts))
+        meta.append(f"{'diff to:':11}" + indent.join(parts))
     elif diff_ref != 0:
         if diff_ref < 0:
             note = f"(fewer than {-diff_ref} entries before this one)"
@@ -319,7 +383,7 @@ def show_file(
     print()
     print("\n".join(f"- {m}" for m in meta))   # metadata as a bullet list
     print()
-    print(render_markdown(entry, dist, prev, fields, abs_delta))
+    print(render_markdown(entry, dist, prev, fields, abs_delta, avg, iteration))
     return entry.get("run_id")
 
 
@@ -346,6 +410,12 @@ def main() -> None:
                     help="include min, q1, median, q3, max and n columns")
     ap.add_argument("--abs", action="store_true", dest="abs_delta",
                     help="also show absolute delta columns (default: percent only)")
+    sel = ap.add_mutually_exclusive_group()
+    sel.add_argument("--avg", action="store_true",
+                     help="show the aggregate over all iterations (average fields, "
+                          "min of min, max of max)")
+    sel.add_argument("-i", "--iteration", type=int, metavar="N",
+                     help="show iteration N (default: 0)")
     args = ap.parse_args()
 
     fields = FIELDS if args.full else DEFAULT_FIELDS
@@ -359,7 +429,8 @@ def main() -> None:
         if i:
             print()
         shown_run_id = show_file(path, metrics, fields, run_id, args.diff,
-                                 args.abs_delta, base, args.base)
+                                 args.abs_delta, args.avg, args.iteration,
+                                 base, args.base)
         if run_id is None:
             run_id = shown_run_id
 
