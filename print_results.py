@@ -268,10 +268,14 @@ def render_markdown(
 def find_entry(entries: list[Entry], run_id: Optional[int]) -> Optional[Entry]:
     """The entry with run_id, or the latest entry if run_id is None.
 
-    Returns None if a specific run_id is requested but not present.
+    run_id <= 0 is relative to the last entry (0 = last). Returns None if a
+    specific run_id is requested but not present.
     """
     if run_id is None:
         return entries[-1]
+    if run_id <= 0:
+        index = run_id - 1
+        return entries[index] if -index <= len(entries) else None
     return next((e for e in entries if e.get("run_id") == run_id), None)
 
 
@@ -405,7 +409,8 @@ def main() -> None:
                     help="diff against a base .jsonl time series, raw "
                          "sel4bench .json file, or raw sel4bench log file")
     ap.add_argument("--run-id", type=int,
-                    help="show this run ID instead of the latest entry")
+                    help="show this run ID instead of the latest entry; "
+                         "0 or negative is relative to the last entry")
     ap.add_argument("--full", action="store_true",
                     help="include min, q1, median, q3, max and n columns")
     ap.add_argument("--abs", action="store_true", dest="abs_delta",
