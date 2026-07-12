@@ -1,0 +1,14 @@
+# License information for files that cannot have a license header
+
+version = 1
+
+SPDX-PackageName = "sel4bench-results"
+SPDX-PackageSupplier = "seL4 International"
+SPDX-PackageDownloadLocation = "https://github.com/seL4/sel4bench-results/"
+
+[[annotations]]
+path = [
+    "2026/*/*.jsonl",
+]
+SPDX-FileCopyrightText = "2026 seL4 International"
+SPDX-License-Identifier = "CC-BY-4.0"
