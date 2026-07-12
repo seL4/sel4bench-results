@@ -197,7 +197,7 @@ def build_rows(
             else:
                 cells.append(fmt(v))
             pv = prev_result[i] if isinstance(prev_result, list) \
-                 and i < len(prev_result) else None
+                and i < len(prev_result) else None
             dcells.append(fmt_delta(v, pv))
             pcells.append(fmt_pct(v, pv))
         rows.append(cells)
@@ -304,6 +304,7 @@ def pick_prev(
 def config_of_path(path: str) -> str:
     """Return CONFIG in path/to/CONFIG.jsonl"""
     return os.path.splitext(os.path.basename(path))[0]
+
 
 def show_file(
     path: str,
@@ -438,6 +439,7 @@ def main() -> None:
                                  base, args.base)
         if run_id is None:
             run_id = shown_run_id
+
 
 if __name__ == "__main__":
     main()
