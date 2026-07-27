@@ -108,10 +108,17 @@ def average_iterations(iterations: list[Result]) -> Result:
     return agg
 
 
-def iteration_counts(entry: Entry) -> list[int]:
+def metric_items(entry: Entry, keys: Optional[list[str]]) -> list[tuple[str, list[Result]]]:
+    """(metric key, iterations) pairs of an entry, optionally restricted to `keys`"""
+    items = {k: v for k, v in entry.items() if k not in META and isinstance(v, list)}
+    if keys is None:
+        return list(items.items())
+    return [(k, items[k]) for k in keys if k in items]
+
+
+def iteration_counts(entry: Entry, keys: Optional[list[str]] = None) -> list[int]:
     """Number of iterations recorded for each metric in an entry."""
-    return [len(v) for k, v in entry.items()
-            if k not in META and isinstance(v, list)]
+    return [len(v) for _, v in metric_items(entry, keys)]
 
 
 def return_result(
@@ -163,7 +170,7 @@ def fmt_pct(cur: int | float | None, prev: int | float | None) -> str:
 
 def build_rows(
     entry: Entry, metrics: Dist, prev: Optional[Entry], fields: list[str],
-    avg: bool, iteration: Optional[int],
+    avg: bool, iteration: Optional[int], keys: Optional[list[str]] = None,
 ) -> tuple[list[str], list[list[str]], list[list[str]], list[list[str]],
            list[int], list[str]]:
     """Return (header, rows, deltas, pcts, counts, mean_stddev) of cell strings.
@@ -178,9 +185,7 @@ def build_rows(
     pcts: list[list[str]] = []     # percentage delta strings ("" where none)
     counts: list[int] = []         # number of iterations per row
     mean_stddev: list[str] = []    # stddev between per-iteration means, per row
-    for key, iterations in entry.items():
-        if key in META or not isinstance(iterations, list):
-            continue
+    for key, iterations in metric_items(entry, keys):
         counts.append(len(iterations))
         means = [it[mean_idx] for it in iterations]
         mean_stddev.append(fmt(round(statistics.stdev(means), 1)) if len(means) > 1 else "-")
@@ -214,10 +219,11 @@ def render_markdown(
     abs_delta: bool = False,
     avg: bool = False,
     iteration: Optional[int] = None,
+    keys: Optional[list[str]] = None,
 ) -> str:
     """Render one entry as a Markdown table, optionally with delta columns."""
     header, rows, deltas, pcts, counts, mean_stddev = \
-        build_rows(entry, metrics, prev, fields, avg, iteration)
+        build_rows(entry, metrics, prev, fields, avg, iteration, keys)
 
     # optional percentage delta and absolute delta
     # no delta for n; no percentage delta for stddev
@@ -315,6 +321,7 @@ def show_file(
     abs_delta: bool,
     avg: bool,
     iteration: Optional[int],
+    keys: Optional[list[str]] = None,
     base: Optional[list[Entry]] = None,
     base_path: Optional[str] = None,
 ) -> Optional[int]:
@@ -322,7 +329,8 @@ def show_file(
 
     A .jsonl file is treated as a time series; a .json file is read as a raw
     sel4bench JSON result file; any other file is read as a raw sel4bench log.
-    If base exists, the table is diffed against the base series.
+    If `base` exists, the table is diffed against the base series.
+    The optional `keys` restricts the given metric keys.
 
     Return the run_id actually shown, to be re-used for other files.
     """
@@ -352,7 +360,7 @@ def show_file(
             elif key == "ts":
                 value = fmt_time(value)
             meta.append(f"{name + ':':11}{value}")
-    counts = iteration_counts(entry)
+    counts = iteration_counts(entry, keys)
     if max(counts, default=0) > 1:
         uniq_counts = set(counts)
         total = f" (n={uniq_counts.pop()})" if len(uniq_counts) == 1 else ""
@@ -388,8 +396,16 @@ def show_file(
     print()
     print("\n".join(f"- {m}" for m in meta))   # metadata as a bullet list
     print()
-    print(render_markdown(entry, dist, prev, fields, abs_delta, avg, iteration))
+    print(render_markdown(entry, dist, prev, fields, abs_delta, avg, iteration, keys))
     return entry.get("run_id")
+
+
+def parse_keys(values: Optional[list[str]]) -> Optional[list[str]]:
+    """Flatten lists of comma-separated strings into one list of strings"""
+    if values is None:
+        return None
+    # not quite to spec: also splits on spaces and removes empty entries like ",,"
+    return list(dict.fromkeys(k for v in values for k in v.replace(",", " ").split()))
 
 
 def main() -> None:
@@ -401,6 +417,8 @@ def main() -> None:
                          "result file(s), or raw sel4bench log file(s)")
     ap.add_argument("--metrics-file", default=os.path.join(HERE, "metrics.yml"),
                     help="path to metrics.yml (default: alongside this script)")
+    ap.add_argument("-m", "--metrics", action="append", metavar="KEYS",
+                    help="comma separated list of metrics to show (default all)")
     ap.add_argument("--diff", type=int, nargs="?", const=-1, default=0,
                     metavar="REF",
                     help="show diff to previous entry; with a negative "
@@ -427,6 +445,13 @@ def main() -> None:
     fields = FIELDS if args.full else DEFAULT_FIELDS
     metrics = extract.load_metrics(args.metrics_file)
 
+    keys = parse_keys(args.metrics)
+    if keys is not None:
+        known = {m["key"] for m in metrics}
+        unknown = [k for k in keys if k not in known]
+        if unknown:
+            ap.error(f"unknown metric(s): {', '.join(unknown)}")
+
     base = read_results(args.base, metrics) if args.base else None
 
     # Latest entry of first file determines run_id (unless specified)
@@ -436,7 +461,7 @@ def main() -> None:
             print()
         shown_run_id = show_file(path, metrics, fields, run_id, args.diff,
                                  args.abs_delta, args.avg, args.iteration,
-                                 base, args.base)
+                                 keys, base, args.base)
         if run_id is None:
             run_id = shown_run_id
 
