@@ -37,6 +37,7 @@ META = {
     "sha_kernel": "kernel",
     "sha_bench": "bench",
     "run_id": "run-id",
+    "compiler": "compiler",
 }
 
 # base URL for linking a run_id
