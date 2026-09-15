@@ -1,6 +1,9 @@
 #!/usr/bin/env nix-shell
 #! nix-shell -i bash
 #! nix-shell -p pup jq git libxml2
+# Copyright 2026, UNSW
+#
+# SPDX-License-Identifier: BSD-2-Clause
 
 # Usage: ./backfill_old_history.sh /path/to/seL4-website /path/to/sel4bench-manifest
 
